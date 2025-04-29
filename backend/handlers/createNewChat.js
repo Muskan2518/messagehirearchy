@@ -32,6 +32,9 @@ const createNewChat = async (req, res) => {
     // Verify the JWT token before processing the request
     const decoded = verifyToken(token);  // Decode and verify the token
 
+    // Log the decoded token for debugging purposes
+    console.log('Decoded Token:', decoded);
+
     // Find the user by the decoded username
     const user = await User.findOne({ username: decoded.username });
     if (!user) {
@@ -50,7 +53,7 @@ const createNewChat = async (req, res) => {
     const rootMessage = new Message({
       chat_id: newChat._id,  // Set the correct chat_id immediately
       parent_id: null,  // No parent for the root message
-      sender: 'user',  // Ensure that 'system' is a valid enum value in the schema
+      sender: 'ai',  // Ensure that 'ai' is valid in your schema
       content: 'Welcome to the chat!',  // Add some default content
       children: [],  // No child messages initially
     });
@@ -67,7 +70,7 @@ const createNewChat = async (req, res) => {
 
     return res.status(201).json({ message: 'Chat created successfully', chatId: newChat._id });
   } catch (error) {
-    console.error('Error:', error);  // Log error for debugging
+    console.error('Error creating new chat:', error);  // Log detailed error
     return res.status(500).json({ error: error.message });
   }
 };

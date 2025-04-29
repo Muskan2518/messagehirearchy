@@ -1,0 +1,50 @@
+const fs = require('fs');
+const path = require('path');
+const jwt = require('jsonwebtoken');
+const Chat = require('../models/chat'); // Only using Chat model
+
+// Read public key for JWT verification
+const publicKey = fs.readFileSync(path.join(__dirname, '..', 'public_key.pem'), 'utf8');
+
+// Function to verify JWT token
+const verifyToken = (token) => {
+  try {
+    return jwt.verify(token, publicKey, { algorithms: ['RS256'] });
+  } catch (error) {
+    throw new Error('Invalid or expired token');
+  }
+};
+
+// Controller to get user's chat history
+const getChatHistory = async (req, res) => {
+  const token = req.headers['authorization']?.split(' ')[1];
+
+  try {
+    if (!token) {
+      return res.status(401).json({ error: 'No token provided' });
+    }
+
+    const decoded = verifyToken(token);
+    const username = decoded.username;
+
+    if (!username) {
+      return res.status(400).json({ error: 'Invalid token: username missing' });
+    }
+
+    // Fetch chats by this user, sorted by most recent
+    const chats = await Chat.find({ username }).sort({ createdAt: -1 });
+
+    const history = chats.map(chat => ({
+      chatId: chat._id,
+      title: chat.title,
+    }));
+
+    return res.status(200).json({ history });
+
+  } catch (error) {
+    console.error('Error in getChatHistory:', error.message);
+    return res.status(500).json({ error: error.message });
+  }
+};
+
+module.exports = getChatHistory;

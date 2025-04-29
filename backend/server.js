@@ -3,9 +3,19 @@ const dotenv = require('dotenv');
 const fs = require('fs');
 const { generateKeyPairSync } = require('crypto');
 const connectDB = require('./database/connect');
+const cors = require('cors');
+
+// Allow requests from localhost:3000
+
+
 
 dotenv.config();
 const app = express();
+app.use(cors({
+  origin: 'http://localhost:5173',
+  credentials: true // if you're using cookies or sessions
+}));
+
 
 // Connect to MongoDB
 connectDB();
@@ -43,17 +53,31 @@ app.get('/ping', async (req, res) => {
 });
 
 // Auth Routes
+const signin = require('./handlers/signin');
+app.post('/signin', signin);
 
-const signin = require('./handlers/signin');  // Import the signin function
-app.post('/signin', signin);  // Pass it as a function handler
-const signup = require('./handlers/signup');  // Import the signin function
-app.post('/signup', signup);  // Pass it as a function handler
-const askQuestion =require('./handlers/askQuestion')
-app.post('/askQuestion',askQuestion)
-const createNewChat =require('./handlers/createNewChat')
-app.post('/createNewChat',createNewChat)
+const signup = require('./handlers/signup');
+app.post('/signup', signup);
 
+const askQuestion = require('./handlers/askQuestion');
+app.post('/askQuestion', askQuestion);
 
+const createNewChat = require('./handlers/createNewChat');
+app.post('/createNewChat', createNewChat);
+
+const enter = require('./handlers/enter');
+app.post('/enter', enter);
+
+const edit = require('./handlers/edit');   // ✅ you forgot this part
+app.post('/edit/:messageId', edit);      
+const regenerate=require('./handlers/regenerate')
+app.post('/regenerate',regenerate)
+const respond=require('./handlers/respond')
+app.post('/respond',respond)
+const getChatHistory=require('./handlers/getChatHistory')
+app.get('/getChatHistory',getChatHistory)
+const getSpecificHistory=require('./handlers/getSpecificHistory')
+app.get('/getSpecificHistory/:chatId',getSpecificHistory)
 // Start Server
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

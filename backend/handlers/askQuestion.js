@@ -32,7 +32,7 @@ const generateContentFromGemini = async (question) => {
   };
 
   try {
-    const geminiApiKey = 'AIzaSyBtJ02Zgow9wO551Se3ZneFjdcvu_IKtsA';  // Replace with your actual Gemini API key
+    const geminiApiKey = process.env.GEMINI_API_KEY; // use .env in prod
 
     const response = await axios.post(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${geminiApiKey}`,
