@@ -7,8 +7,9 @@ const Dashboard = () => {
   const [question, setQuestion] = useState('');
   const [loadingResponse, setLoadingResponse] = useState(false);
   const [loadingRegeneration, setLoadingRegeneration] = useState(false);
-  const [loadingRespond, setLoadingRespond] = useState(false); // New state for respond action
+  const [loadingRespond, setLoadingRespond] = useState(false);
   const [error, setError] = useState(null);
+  const [showTreeView, setShowTreeView] = useState(false); // New state for tree view
 
   const token = sessionStorage.getItem('sessionToken');
 
@@ -74,6 +75,7 @@ const Dashboard = () => {
   const fetchSpecificChat = async (chatId, title) => {
     setSelectedChat({ title, chatId });
     setChatMessages([]);
+    setShowTreeView(false); // Reset tree view when switching chats
 
     try {
       const response = await fetch(`http://localhost:5000/getSpecificHistory/${chatId}`, {
@@ -111,7 +113,7 @@ const Dashboard = () => {
         throw new Error('Failed to edit message');
       }
 
-      const data = await response.json();
+      await response.json();
       alert('Message edited successfully');
       fetchSpecificChat(selectedChat.chatId, selectedChat.title);
     } catch (error) {
@@ -182,7 +184,6 @@ const Dashboard = () => {
     }
   };
 
-  // New handler for responding to AI messages
   const handleRespondToAiMessage = async (previousAiMessageId) => {
     const newUserQuestion = prompt('Enter your follow-up question:');
     if (!newUserQuestion || !selectedChat) return;
@@ -247,6 +248,23 @@ const Dashboard = () => {
           )}
           {msg.children && msg.children.length > 0 && renderMessages(msg.children)}
         </div>
+      </div>
+    ));
+  };
+
+  const renderTreeView = (messages, depth = 0) => {
+    return messages.map((msg, index) => (
+      <div
+        key={msg._id || index}
+        style={{
+          marginLeft: depth * 20,
+          borderLeft: '2px solid #ccc',
+          paddingLeft: 10,
+          marginBottom: 5,
+        }}
+      >
+        <strong>{msg.sender}:</strong> {msg.content}
+        {msg.children && msg.children.length > 0 && renderTreeView(msg.children, depth + 1)}
       </div>
     ));
   };
@@ -394,7 +412,7 @@ const Dashboard = () => {
           ) : chatHistory.length === 0 ? (
             <p>No chat history found.</p>
           ) : (
-            [...chatHistory].reverse().map(({ title, chatId }, index) => (
+            [...chatHistory].reverse().map(({ title, chatId }) => (
               <div
                 key={chatId}
                 className="chat-item"
@@ -415,7 +433,23 @@ const Dashboard = () => {
           {selectedChat ? (
             <>
               <h2>{selectedChat.title}</h2>
-              <div>{renderMessages(chatMessages)}</div>
+              <button
+                onClick={() => setShowTreeView(!showTreeView)}
+                style={{
+                  marginBottom: 10,
+                  padding: '8px 16px',
+                  backgroundColor: '#17a2b8',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 4,
+                  cursor: 'pointer',
+                  width: 'fit-content'
+                }}
+              >
+                {showTreeView ? 'Hide Tree View' : 'Show Tree View'}
+              </button>
+
+              <div>{showTreeView ? renderTreeView(chatMessages) : renderMessages(chatMessages)}</div>
 
               <div className="input-bar">
                 <input
