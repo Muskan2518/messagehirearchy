@@ -1,33 +1,54 @@
 const fs = require('fs');
 const path = require('path');
 const jwt = require('jsonwebtoken');
+const axios = require('axios');
 const Message = require('../models/message');
+require('dotenv').config(); // Load .env variables
 
-// Read public key
+// Load public key
 const publicKey = fs.readFileSync(path.join(__dirname, '..', 'public_key.pem'), 'utf8');
 
 // Verify JWT token
 const verifyToken = (token) => {
+  if (!token) throw new Error('No token provided');
   try {
     return jwt.verify(token, publicKey, { algorithms: ['RS256'] });
   } catch (error) {
+    console.error('JWT verification failed:', error.message);
     throw new Error('Invalid or expired token');
   }
 };
 
-// Gemini call: refine or regenerate based on previous answer
-const generateContentFromGemini = async (question) => {
-  // Return a constant string for any question
-  const response = "This is a constant response for any question.";
+// Generate improved content using Together API
+const regenerateFromExistingAnswer = async (previousAnswer) => {
   try {
-    return response;
+    const TOGETHER_API_KEY = process.env.TOGETHER_API_KEY;
+    if (!TOGETHER_API_KEY) throw new Error('TOGETHER_API_KEY not set in environment');
+
+    const response = await axios.post(
+      'https://api.together.xyz/v1/chat/completions',
+      {
+        model: "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free",
+        messages: [
+          { role: "user", content: `Improve or rewrite the following answer:\n\n"${previousAnswer}"` }
+        ]
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${TOGETHER_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+
+    return response.data.choices?.[0]?.message?.content || 'No response from model';
   } catch (error) {
-    console.error('Error generating content:', error.message);
-    throw new Error('Error generating response.');
+    console.error('Together API error:', error.response?.data || error.message);
+    throw new Error('Failed to generate response from Together API');
   }
 };
 
-// Main handler for regenerating an AI message
+// Route handler
 const regenerateBranch = async (req, res) => {
   const { previousAiMessageId } = req.body;
   const token = req.headers['authorization']?.split(' ')[1];
@@ -39,16 +60,13 @@ const regenerateBranch = async (req, res) => {
   try {
     verifyToken(token);
 
-    // Fetch the previous AI message
     const previousAiMessage = await Message.findById(previousAiMessageId);
     if (!previousAiMessage || previousAiMessage.sender !== 'ai') {
-      return res.status(404).json({ error: 'Previous AI message not found or invalid sender' });
+      return res.status(404).json({ error: 'Previous AI message not found or not from AI' });
     }
 
-    // Use Gemini (or the constant response for this case) to improve or modify the answer
-    const improvedAnswer = await generateContentFromGemini(previousAiMessage.content);
+    const improvedAnswer = await regenerateFromExistingAnswer(previousAiMessage.content);
 
-    // Save the new AI message
     const newAiMessage = new Message({
       chat_id: previousAiMessage.chat_id,
       parent_id: previousAiMessage._id,
@@ -60,12 +78,10 @@ const regenerateBranch = async (req, res) => {
 
     await newAiMessage.save();
 
-    // Update the parent AI message's children
     previousAiMessage.children.push(newAiMessage._id);
     previousAiMessage.is_regenerated = true;
     await previousAiMessage.save();
 
-    // Return the response
     return res.status(201).json({
       message: 'Branch regeneration successful.',
       newAiMessageId: newAiMessage._id,

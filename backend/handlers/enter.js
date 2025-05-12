@@ -2,39 +2,52 @@ const fs = require('fs');
 const path = require('path');
 const jwt = require('jsonwebtoken');
 const axios = require('axios');
+require('dotenv').config(); // Load environment variables
 
 const Chat = require('../models/chat');
 const Message = require('../models/message');
-const User = require('../models/User');
 
 // Read public key
 const publicKey = fs.readFileSync(path.join(__dirname, '..', 'public_key.pem'), 'utf8');
 
 // Verify JWT token
 const verifyToken = (token) => {
+  if (!token) throw new Error('No token provided');
   try {
-    const decoded = jwt.verify(token, publicKey, { algorithms: ['RS256'] });
-    return decoded;
+    return jwt.verify(token, publicKey, { algorithms: ['RS256'] });
   } catch (error) {
     throw new Error('Invalid or expired token');
   }
 };
 
-// Generate content from Gemini
-const generateContentFromGemini = async (question) => {
-  // You can choose to use the question or ignore it
-  const response = "This is a constant response for any question.";
+// Generate content from Together API
+const generateContentFromTogether = async (question) => {
+  const TOGETHER_API_KEY = process.env.TOGETHER_API_KEY;
+  if (!TOGETHER_API_KEY) throw new Error('TOGETHER_API_KEY not set in environment');
 
   try {
-    // Instead of calling the Gemini API, directly return a constant string
-    return response;
+    const response = await axios.post(
+      'https://api.together.xyz/v1/chat/completions',
+      {
+        model: "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free",
+        messages: [{ role: "user", content: question }],
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${TOGETHER_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+
+    return response.data.choices?.[0]?.message?.content || 'No response from model';
   } catch (error) {
-    console.error('Error generating content:', error.message);
-    throw new Error('Error generating response.');
+    console.error('Together API error:', error.response?.data || error.message);
+    throw new Error('Failed to generate response from Together API');
   }
 };
 
-// Main handler: Enter a new question into chat
+// Main handler
 const enterChat = async (req, res) => {
   const { chatId, question } = req.body;
   const token = req.headers['authorization']?.split(' ')[1];
@@ -44,22 +57,18 @@ const enterChat = async (req, res) => {
   }
 
   try {
-    // Verify user
     const user = verifyToken(token);
 
-    // Find the chat
     const chat = await Chat.findById(chatId);
     if (!chat) {
       return res.status(404).json({ error: 'Chat not found.' });
     }
 
-    // Find the root message
     const rootMessage = await Message.findById(chat.root_message_id);
     if (!rootMessage) {
       return res.status(404).json({ error: 'Root message not found.' });
     }
 
-    // Save the user's question as a child of the root message
     const userMessage = new Message({
       chat_id: chat._id,
       parent_id: rootMessage._id,
@@ -69,32 +78,28 @@ const enterChat = async (req, res) => {
     });
     await userMessage.save();
 
-    // Push user message ID to root message's children
     rootMessage.children.push(userMessage._id);
     await rootMessage.save();
 
-    // Generate Gemini's answer
-    const geminiAnswer = await generateContentFromGemini(question);
+    const aiResponse = await generateContentFromTogether(question);
 
-    // Save the Gemini answer as a child of the user's question
-    const geminiMessage = new Message({
+    const aiMessage = new Message({
       chat_id: chat._id,
       parent_id: userMessage._id,
       sender: 'ai',
-      content: geminiAnswer,
+      content: aiResponse,
       children: [],
     });
-    await geminiMessage.save();
+    await aiMessage.save();
 
-    // Push Gemini message ID to user's message's children
-    userMessage.children.push(geminiMessage._id);
+    userMessage.children.push(aiMessage._id);
     await userMessage.save();
 
     return res.status(201).json({
       message: 'Question and response added successfully.',
       userMessageId: userMessage._id,
-      geminiMessageId: geminiMessage._id,
-      geminiAnswer: geminiAnswer,
+      geminiMessageId: aiMessage._id,
+      geminiAnswer: aiResponse,
     });
 
   } catch (error) {

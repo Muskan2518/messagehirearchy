@@ -3,37 +3,51 @@ const fs = require('fs');
 const path = require('path');
 const jwt = require('jsonwebtoken');
 const axios = require('axios');
+require('dotenv').config(); // Load .env variables
 
-
-// Read the public key for verifying JWT
+// Load public key
 const publicKey = fs.readFileSync(path.join(__dirname, '..', 'public_key.pem'), 'utf8');
 
-// Verify token
+// JWT verification
 const verifyToken = (token) => {
+  if (!token) throw new Error('No token provided');
   try {
     return jwt.verify(token, publicKey, { algorithms: ['RS256'] });
   } catch (error) {
     throw new Error('Invalid or expired token');
   }
 };
-const generateContentFromGemini = async (question) => {
-  // You can choose to use the question or ignore it
-  const response = "This is a constant response for any question.";
+
+// Together API content generation
+const generateContentFromTogether = async (question) => {
+  const TOGETHER_API_KEY = process.env.TOGETHER_API_KEY;
+  if (!TOGETHER_API_KEY) throw new Error('TOGETHER_API_KEY not set in environment');
 
   try {
-    // Instead of calling the Gemini API, directly return a constant string
-    return response;
+    const response = await axios.post(
+      'https://api.together.xyz/v1/chat/completions',
+      {
+        model: "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free",
+        messages: [{ role: "user", content: question }],
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${TOGETHER_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+
+    return response.data.choices?.[0]?.message?.content || 'No response from model';
   } catch (error) {
-    console.error('Error generating content:', error.message);
-    throw new Error('Error generating response.');
+    console.error('Together API error:', error.response?.data || error.message);
+    throw new Error('Failed to generate response from Together API');
   }
 };
 
-    
-
-// Controller to handle editing a message
+// Controller: edit a user message
 const editMessage = async (req, res) => {
-  const { messageId } = req.params; // ID of the user's original message
+  const { messageId } = req.params;
   const { newContent } = req.body;
   const token = req.headers['authorization']?.split(' ')[1];
 
@@ -44,46 +58,49 @@ const editMessage = async (req, res) => {
   try {
     const user = verifyToken(token);
 
-    // Find the original user message
     const originalMessage = await Message.findById(messageId);
     if (!originalMessage) {
       return res.status(404).json({ error: 'Original message not found' });
     }
 
-    // Create the new edited message
-    const newEditedMessage = new Message({
-      chat_id: originalMessage.chat_id,     // Same chat
-      parent_id: originalMessage._id,        // Parent is the original question
-      sender: "user",                 // Current user
-      content: newContent,
-      version: (originalMessage.version || 0) + 1, // Increment version
-      children: []
-    });
-    await newEditedMessage.save();
-
-    // Update the original message
-    originalMessage.is_edited = true;
-    originalMessage.children.push(newEditedMessage._id); // Add new edited message as a child
-    await originalMessage.save();
-    const geminiAnswer = await generateContentFromGemini(newContent);
-const geminiMessage = new Message({
+    // Create new edited user message
+    const editedMessage = new Message({
       chat_id: originalMessage.chat_id,
-      parent_id: newEditedMessage._id,
-      sender: 'ai',
-      content: geminiAnswer,
+      parent_id: originalMessage._id,
+      sender: 'user',
+      content: newContent,
+      version: (originalMessage.version || 0) + 1,
       children: [],
     });
-    await geminiMessage.save();
-    newEditedMessage.children.push(geminiMessage._id);
-    await newEditedMessage.save();
+    await editedMessage.save();
+
+    // Mark original as edited
+    originalMessage.is_edited = true;
+    originalMessage.children.push(editedMessage._id);
+    await originalMessage.save();
+
+    // Generate AI response to edited message
+    const aiResponse = await generateContentFromTogether(newContent);
+
+    const aiMessage = new Message({
+      chat_id: originalMessage.chat_id,
+      parent_id: editedMessage._id,
+      sender: 'ai',
+      content: aiResponse,
+      children: [],
+    });
+    await aiMessage.save();
+
+    // Link AI response to edited message
+    editedMessage.children.push(aiMessage._id);
+    await editedMessage.save();
 
     return res.status(201).json({
       message: 'Edited message created successfully.',
-      newEditedMessage: newEditedMessage._id,
-        geminiMessageId: geminiMessage._id,
-        geminiAnswer: geminiAnswer,
-        messageId:messageId
-
+      newEditedMessageId: editedMessage._id,
+      geminiMessageId: aiMessage._id,
+      geminiAnswer: aiResponse,
+      originalMessageId: messageId,
     });
 
   } catch (error) {
