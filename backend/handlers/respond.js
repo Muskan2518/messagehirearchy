@@ -16,29 +16,18 @@ const verifyToken = (token) => {
 
 // Gemini API Call
 const generateContentFromGemini = async (question) => {
-  const requestBody = {
-    contents: [{ parts: [{ text: question }] }],
-  };
+  // You can choose to use the question or ignore it
+  const response = "This is a constant response for any question.";
 
   try {
-    const geminiApiKey = process.env.GEMINI_API_KEY ; // use .env in prod
-
-    const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${geminiApiKey}`,
-      requestBody,
-      { headers: { 'Content-Type': 'application/json' } }
-    );
-
-    if (response.data?.candidates?.length > 0) {
-      return response.data.candidates[0].content.parts[0].text;
-    } else {
-      throw new Error('Gemini API returned empty candidates.');
-    }
+    // Instead of calling the Gemini API, directly return a constant string
+    return response;
   } catch (error) {
-    console.error('Gemini API Error:', error.response?.data || error.message);
-    throw new Error('Failed to generate response from Gemini API.');
+    console.error('Error generating content:', error.message);
+    throw new Error('Error generating response.');
   }
 };
+
 
 const respondToAiMessage = async (req, res) => {
   const { previousAiMessageId, newUserQuestion } = req.body;

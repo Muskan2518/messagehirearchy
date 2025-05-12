@@ -1,7 +1,6 @@
 const fs = require('fs');
 const path = require('path');
 const jwt = require('jsonwebtoken');
-const axios = require('axios');
 const Message = require('../models/message');
 
 // Read public key
@@ -17,36 +16,18 @@ const verifyToken = (token) => {
 };
 
 // Gemini call: refine or regenerate based on previous answer
-const regenerateFromExistingAnswer = async (previousAnswer) => {
-  const requestBody = {
-    contents: [{
-      parts: [{
-        text: `Here is an AI-generated answer:\n\n"${previousAnswer}"\n\nImprove or regenerate this response to be clearer, more detailed, or better formatted.`
-      }]
-    }]
-  };
-
-  const geminiApiKey = process.env.GEMINI_API_KEY || 'YOUR_KEY_HERE'; // use .env in prod
-
+const generateContentFromGemini = async (question) => {
+  // Return a constant string for any question
+  const response = "This is a constant response for any question.";
   try {
-    const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${geminiApiKey}`,
-      requestBody,
-      { headers: { 'Content-Type': 'application/json' } }
-    );
-
-    if (response.data?.candidates?.length > 0) {
-      return response.data.candidates[0].content.parts[0].text;
-    } else {
-      throw new Error('Gemini returned no candidates.');
-    }
+    return response;
   } catch (error) {
-    console.error('Gemini error:', error.response?.data || error.message);
-    throw new Error('Failed to regenerate answer with Gemini');
+    console.error('Error generating content:', error.message);
+    throw new Error('Error generating response.');
   }
 };
 
-// Main handler
+// Main handler for regenerating an AI message
 const regenerateBranch = async (req, res) => {
   const { previousAiMessageId } = req.body;
   const token = req.headers['authorization']?.split(' ')[1];
@@ -58,16 +39,16 @@ const regenerateBranch = async (req, res) => {
   try {
     verifyToken(token);
 
-    // Fetch previous AI message
+    // Fetch the previous AI message
     const previousAiMessage = await Message.findById(previousAiMessageId);
     if (!previousAiMessage || previousAiMessage.sender !== 'ai') {
       return res.status(404).json({ error: 'Previous AI message not found or invalid sender' });
     }
 
-    // Use Gemini to improve or modify existing answer
-    const improvedAnswer = await regenerateFromExistingAnswer(previousAiMessage.content);
+    // Use Gemini (or the constant response for this case) to improve or modify the answer
+    const improvedAnswer = await generateContentFromGemini(previousAiMessage.content);
 
-    // Save new AI message
+    // Save the new AI message
     const newAiMessage = new Message({
       chat_id: previousAiMessage.chat_id,
       parent_id: previousAiMessage._id,
@@ -79,12 +60,12 @@ const regenerateBranch = async (req, res) => {
 
     await newAiMessage.save();
 
-    // Update parent AI message's children
+    // Update the parent AI message's children
     previousAiMessage.children.push(newAiMessage._id);
     previousAiMessage.is_regenerated = true;
     await previousAiMessage.save();
 
-    // Return response
+    // Return the response
     return res.status(201).json({
       message: 'Branch regeneration successful.',
       newAiMessageId: newAiMessage._id,

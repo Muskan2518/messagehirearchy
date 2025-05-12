@@ -44,7 +44,7 @@ const getChatHistory = async (req, res) => {
   } catch (error) {
     console.error('Error in getChatHistory:', error.message);
     return res.status(500).json({ error: error.message });
-  }
+  } 
 };
 
 module.exports = getChatHistory;
